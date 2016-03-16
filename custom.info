@@ -1,0 +1,6 @@
+name = Custom module
+package = sportpunkt.ru
+core = 7.x
+version = 7.x-0.2
+dependencies[] = pathauto
+dependencies[] = commerce_product

@@ -1,0 +1,477 @@
+<?php
+
+/**
+ * Форма поиска от представления поиска
+ *
+ * @see hook_form_alter().
+ */
+function custom_form_views_exposed_form_alter(&$form, &$form_state) {
+  if (!isset($form['search_api_views_fulltext']['#attributes'])) {
+    $form['search_api_views_fulltext']['#attributes'] = array();
+  }
+  $form['search_api_views_fulltext']['#attributes']['placeholder'] = 'Что вы ищете?';
+  $form['submit']['#value'] = '';
+}
+
+
+/**
+ * @see hook_block_info().
+ */
+function custom_block_info() {
+  $blocks = array();
+  $blocks['soon'] = array(
+    'info' => 'Блок с товарами: скоро в продаже'
+  );
+  $blocks['hit'] = array(
+    'info' => 'Блок с товарами: хит продаж'
+  );
+  $blocks['new'] = array(
+    'info' => 'Блок с товарами: последние поступления'
+  );
+  $blocks['new_menu'] = array(
+    'info' => 'Новое главное меню',
+    'cache' => DRUPAL_CACHE_GLOBAL,
+  );
+  return $blocks;
+}
+
+/**
+ * @see hook_block_view_alter().
+ */
+function custom_block_view_alter(&$data, $block) {
+  global $user;
+
+  if ($block->delta == 'menu-corp') {
+    if (in_array('сотрудник', $user->roles)) {
+      $show = false;
+      $node = menu_get_object('node', 1);
+      $term = menu_get_object('taxonomy_term', 2);
+      if (isset($term->vocabulary_machine_name) && $term->vocabulary_machine_name == 'corp') {
+        $show = true;
+      }
+      elseif (isset($node->type) && $node->type == 'corp_article') {
+        $show = true;
+      }
+      elseif (isset($node->type) && $node->type == 'webform') {
+        $show = true;
+      }
+      elseif (arg(0) == 'corporate') {
+        $show = true;
+      }
+      if (!$show) {
+        $data['content'] = array();
+      }
+    }
+  }
+}
+
+/**
+ * @see hook_block_view().
+ */
+function custom_block_view($delta = '') {
+  $block = array();
+
+  switch ($delta) {
+    case 'soon':
+      $block['subject'] = 'Скоро в продаже';
+      $block['content'] = _custom_product_block_soon();
+      break;
+
+    case 'hit':
+      $block['subject'] = 'Хиты продаж';
+      $block['content'] = _custom_product_block_hit();
+      break;
+
+    case 'new':
+      $block['subject'] = 'Последние поступления';
+      $block['content'] = _custom_product_block_new();
+      break;
+
+    case 'new_menu':
+      $block['subject'] = 'Новое главное меню';
+      $block['content'] = _custom_main_menu_block();
+      break;
+  }
+
+  return $block;
+}
+
+/**
+ * Вводим товары, с пометкой "Скоро в продаже"
+ */
+function _custom_product_block_soon() {
+  $output = '';
+
+  foreach (_custom_product_block_sql(
+    'field_data_field_soon',
+    'field_soon_value',
+    '1'
+  )->execute() as $row) {
+    if ($product = commerce_product_load($row->product_id)) {
+      if (!empty($product->field_images[LANGUAGE_NONE])) {
+        $elem =
+          '<div class="photo">sdfdsfsdf' . l(
+            theme('image_style', array(
+              'style_name' => 'carousel',
+              'path' => $product->field_images[LANGUAGE_NONE][0]['uri'],
+              'alt' => $row->title,
+              'title' => $row->title,
+            )),
+            'node/' . $row->nid,
+            array('html' => true)
+          ) . '</div>' .
+          '<div class="title">' . l($row->title, 'node/' . $row->nid) . '</div>';
+        if ($row->teaser) {
+          $elem .= '<div class="teaser">' . $row->teaser . '</div>';
+        }
+        $output .= '<div class="soon-elem">' . $elem . '</div>';
+      }
+    }
+  }
+
+  return '<div class="soon-wrap">' . $output . '</div>';
+}
+
+/**
+ * Собрать блок "Хиты продаж"
+ */
+function _custom_product_block_hit() {
+  $output = '';
+  $elems = array();
+  foreach (_custom_product_block_sql(
+    'field_data_field_bestseller',
+    'field_bestseller_value',
+    '1'
+  )->execute() as $row) {
+    if ($product = commerce_product_load($row->product_id)) {
+      if (!empty($product->field_images[LANGUAGE_NONE])) {
+        $elems[] = '<div class="elem">' .
+          '<div class="photo">' . l(
+            theme('image_style', array(
+              'style_name' => 'carousel',
+              'path' => $product->field_images[LANGUAGE_NONE][0]['uri'],
+              'alt' => $row->title,
+              'title' => $row->title,
+            )),
+            'node/' . $row->nid,
+            array('html' => true)
+          ) . '</div>' .
+          '<div class="title">' . l($row->title, 'node/' . $row->nid) . '</div>' .
+        '</div>';
+      }
+    }
+  }
+  if (count($elems) > 0) {
+    $output .= '<div class="carousel-wrap"><ul class="slides">';
+    while (count($elems) > 0) {
+      $output .= '<li class="slide">' . implode('', array_splice($elems, 0, 4)) . '</li>';
+    }
+    $output .= '</ul></div>';
+  }
+  return $output;
+}
+
+/**
+ * Вводим товары, с пометкой "Последнее поступление"
+ */
+function _custom_product_block_new() {
+  $elems = array();
+  foreach (_custom_product_block_sql(
+    'field_data_field_new',
+    'field_new_value',
+    '1'
+  )->execute() as $row) {
+    if ($product = commerce_product_load($row->product_id)) {
+      if (isset($product->field_images[LANGUAGE_NONE][0]['uri'])) {
+        $elems[] = '<div class="elem">' .
+          '<div class="photo">' . l(
+            theme('image_style', array(
+              'style_name' => 'carousel',
+              'path' => $product->field_images[LANGUAGE_NONE][0]['uri'],
+              'alt' => $row->title,
+              'title' => $row->title,
+            )),
+            'node/' . $row->nid,
+            array('html' => true)
+          ) . '</div>' .
+          '<div class="title">' . l($row->title, 'node/' . $row->nid) . '</div>' .
+        '</div>';
+      }
+    }
+  }
+  $output = '';
+  if (count($elems) > 0) {
+    $output .= '<div class="carousel-wrap"><ul class="slides">';
+    while (count($elems) > 0) {
+      $output .= '<li class="slide">' . implode('', array_splice($elems, 0, 4)) . '</li>';
+    }
+    $output .= '</ul></div>';
+  }
+  return $output;
+}
+
+function _custom_main_menu_block() {
+  $output = '<div class="main-menu-wrapper"><div class="mob-logo"><img id="mob-logo-img" src="/sites/all/themes/point/images/menu/mob-logo.png" alt="Точка спорта" /></div><ul id="main-menu" class="menu clearfix"><div id="mob-ham"><img id="mob-ham-img" class="menu-shadowFilter" src="/sites/all/themes/point/images/menu/mob-ham.png" alt="Меню" /></div>';
+
+  // Возраст/пол.
+  $use_pretty_paths = _custom_use_pretty_paths();
+  
+  foreach (taxonomy_get_tree(1, 0, 1, true) as $n => $cat_main) {
+	$catalog_trees = _custom_get_taxonomy_trees(taxonomy_get_tree(1, $cat_main->tid, 1));
+    $uri = 'products';
+    $query = array();
+    if ($use_pretty_paths) {
+      $uri .= '/gender/' . pathauto_cleanstring($gender->name) . '-' . $gender->tid;
+    }
+    else {
+      $query['f[0]'] = 'field_product_category:' . $cat_main->tid;
+   }
+	 
+	$output .= ($n > 0 ? '<li class="menu-divider">|</li>' : '').'<li class="first-level' . ($n > 0 ? '' : ' first') . '"><span class="a-first-mobile-cover"></span><span class="arrow-menu"></span>' .
+      l($cat_main->name, $uri, array('query' => $query)) .
+      _custom_format_trees($catalog_trees, $uri, $query) .
+    ' </li>';
+  }
+  
+   
+
+  // Ссылки из главного меню
+  $tree = menu_navigation_links('main-menu');
+  $link_cnt = count($tree);
+  foreach (array_values($tree) as $n => $link) {
+    $classes = '';
+    if ($n == 0) {
+      $classes .= ' first';
+    }
+    if ($n == $link_cnt - 1) {
+      $classes .= ' last';
+    }
+    $classes = ltrim($classes);
+    $output .= '<li' . ($classes ? ' class="' . $classes . '"' : '') . '>' . l(
+      $link['title'],
+      $link['href'],
+      array('attributes' => $link['attributes'])
+    ) . '</li>';
+  }
+
+  $output .= '</ul>
+  <div id="mob-user">
+  <img id="mob-user-img" class="menu-shadowFilter" src="/sites/all/themes/point/images/menu/mob-user.png" alt="Меню пользователя" />
+  
+  <div class="mob-user-inner mobile-hidden">
+  <a href="http://sportpunkt.ru/user">Войти</a> | <a href="http://sportpunkt.ru/user/register">Зарегистрироваться</a>
+  </div>
+  
+  </div>
+  
+  <div id="mob-phone"><img id="mob-phone-img" class="menu-shadowFilter" src="/sites/all/themes/point/images/menu/mob-phone.png" alt="Контакты" /><div class="mob-phone-inner mobile-hidden"><span class="guest-contacts-phone">8 800 25-04-3-04</span><br><span class="guest-contacts-info">По вопросам online-заказов</span></div></div><div id="mob-cart"><img class="menu-shadowFilter" id="mob-cart-img" src="/sites/all/themes/point/images/menu/mob-cart.png" alt="Корзина" /><div class="mob-cart-inner mobile-hidden"></div></div><div style="clear:both;"></div></div>';
+  return $output;
+}
+
+function _custom_use_pretty_paths() {
+  if (module_exists('facetapi_pretty_paths')) {
+    require_once drupal_get_path('module', 'pathauto') . '/pathauto.inc';
+    if ((int)variable_get('facetapi_pretty_paths_searcher_search_api@product_display', 0) > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function _custom_product_block_sql($table, $condition_field, $condition_value, $compare = '=') {
+  $query = db_select($table, 'pl');
+
+  $query->join('node', 'n', 'n.nid = pl.entity_id AND n.vid = pl.revision_id');
+  $query->join('field_data_field_product', 'dp', 'dp.entity_id = pl.entity_id AND dp.revision_id = pl.revision_id');
+  $query->join('commerce_product', 'cp', 'cp.product_id = dp.field_product_product_id');
+  $query->leftJoin('field_data_body', 'b', 'b.entity_id = pl.entity_id AND b.revision_id = pl.revision_id');
+
+  $query->condition('pl.' . $condition_field, $condition_value, $compare);
+  $query->condition('dp.delta', '0', '=');
+  $query->condition('n.status', '1', '=');
+
+  $query->addField('n', 'title');
+  $query->addField('n', 'nid');
+  $query->addField('b', 'body_summary', 'teaser');
+  $query->addField('cp', 'product_id');
+
+  $query->orderBy('n.title', 'ASC');
+  return $query;
+}
+
+function _custom_get_taxonomy_trees($parents) {
+  foreach ($parents as $row) {
+    $i = 1;
+    $row->children = taxonomy_get_children($row->tid, $row->vid);
+  }
+  return $parents;
+}
+
+function _custom_format_trees($structure, $parent_uri, $parent_query) {
+  $use_pretty_paths = _custom_use_pretty_paths();
+  $output = '<div class="drop">';
+
+  // Определяем количество списков и колонок
+  $list_count = count($structure);
+  $col_count = ($list_count < 3) ? 1 : (($list_count < 6) ? 2 : 3);
+  $list_in_col = ceil($list_count / $col_count);
+
+  $output .= '<div class="col">';
+  for ($i = 0; $i < $list_count; $i++) {
+    $tree = &$structure[$i];
+
+    $output .= '<div class="list">';
+
+    $uri = /*$parent_uri*/'products';
+	$query='';
+   /* $query = $parent_query;
+    if ($use_pretty_paths) {
+      $uri .= '/category/' . pathauto_cleanstring($tree->name) . '-' . $tree->tid;
+    }
+    else {*/
+      $query['f[0]'] = 'field_product_category:' . $tree->tid;
+   /* }*/
+   
+   
+  $children_count = count($tree->children);
+   
+    $output .= '<div class="list-title'.($children_count > 0 ? ' second-has-children':'').'">' .
+      l($tree->name, $uri, array('query' => $query)) .($children_count > 0 ? '<span class="a-second-mobile-cover"></span><span class="second-arrow-menu"></span>':'').
+    '</div>';
+
+    $output .= '<ul>';
+    foreach ($tree->children as $child) {
+      $uri = /*$parent_uri*/'products';
+	  $query='';
+      /*$query = $parent_query;
+      if ($use_pretty_paths) {
+        $uri .= '/category/' . pathauto_cleanstring($child->name) . '-' . $child->tid;
+      }
+      else {*/
+        $query['f[0]'] = 'field_product_category:' . $child->tid;
+      /*}*/
+      $output .= '<li>' .
+        l($child->name, $uri, array('query' => $query)) .
+      '</li>';
+    }
+    $output .= '</ul>';
+
+    $output .= '</div>';
+
+    if (($i + 1) % $list_in_col == 0 && ($i + 1) != $list_count) {
+      $output .= '</div><div class="col">';
+    }
+  }
+  $output .= '</div>';
+
+  $output .= '</div>';
+  return $output;
+}
+
+/**
+ * Меняем крошки на страницах товара.
+ *
+ * @see hook_node_view().
+ */
+function custom_node_view($node, $view_mode, $langcode) {
+  global $user;
+
+  if ($node->type == 'product_display') {
+    if ($view_mode == 'full'||$view_mode == 'product_list') {
+      $bc = array();
+      $bc[0] = l(t('Home'), '<front>');
+		
+		
+		
+      $use_pretty_paths = _custom_use_pretty_paths();
+
+      // Ссылаемся на возраст/пол.
+    /*  $gender = null;
+      if (!empty($node->field_product_display_gender[LANGUAGE_NONE]) && count(
+        $node->field_product_display_gender[LANGUAGE_NONE]
+      ) == 1) {
+        $gender = taxonomy_term_load($node->field_product_display_gender[LANGUAGE_NONE][0]['tid']);
+        $uri = 'products';
+        $query = array();
+        if ($use_pretty_paths) {
+          $uri .= '/gender/' . pathauto_cleanstring($gender->name) . '-' . $gender->tid;
+        }
+        else {
+          $query['f[0]'] = 'field_product_display_gender:' . $gender->tid;
+        }
+        $bc[] = l($gender->name, $uri, array('query' => $query));
+      } */
+
+      // Ссылаемся на раздел каталога.
+      if (isset($node->field_product_category[LANGUAGE_NONE][0])) {
+        $category = taxonomy_term_load($node->field_product_category[LANGUAGE_NONE][0]['tid']);
+        $parents = taxonomy_get_parents_all($category->tid);
+        array_shift($parents);
+
+        // Переворачиваем массив родителей и добавляем к нему самую вложенную категорию
+        $terms = array_reverse($parents);
+        $terms[] = $category;
+        foreach ($terms as $term) {
+          $uri = 'products';
+          $query = array();
+          if ($use_pretty_paths) {
+            if ($gender) {
+              $uri .= '/gender/' . pathauto_cleanstring($gender->name) . '-' . $gender->tid;
+            }
+            $uri .= '/catalog/' . pathauto_cleanstring($term->name) . '-' . $term->tid;
+          }
+          else {
+            if ($gender) {
+              $query['f[' . count($query) . ']'] = 'field_product_display_gender:' . $gender->tid;
+            }
+            $query['f[' . count($query) . ']'] = 'field_product_category:' . $term->tid;
+          }
+          $bc[] = l($term->name, $uri, array('query' => $query));
+        }
+      }
+
+      $bc[] = $node->title;
+	 
+      drupal_set_breadcrumb($bc);
+    }
+  }
+  elseif ($node->type == 'corp_article') {
+    if (!in_array('сотрудник', $user->roles)) {
+      drupal_access_denied();
+    }
+  }
+  elseif ($node->type == 'webform') {
+    if (!in_array('сотрудник', $user->roles)) {
+      drupal_access_denied();
+    }
+    else {
+      $open = format_date(
+        $node->publish_on ? $node->publish_on : $node->created,
+        'custom',
+        'd.m.Y H:i'
+      );
+      $close = format_date($node->unpublish_on, 'custom', 'd.m.Y H:i');
+      $node->open = array(
+        '#markup' => 'Срок тестирования: ' . $open . '&nbsp;&mdash; ' . $close,
+      );
+    }
+  }
+}
+
+/**
+ * @see hook_taxonomy_term_view().
+ */
+function custom_taxonomy_term_view($term, $view_mode, $langcode) {	 
+  if ($view_mode == 'full') {
+	   
+    if ($term->vid == 11) {  // Словарь "Сезоны"
+	 
+      $bc = array();
+      $bc[] = l('Главная', '<front>');
+      $bc[] = l('Соревнования', 'competitions');
+      $bc[] = $term->name;
+      drupal_set_breadcrumb($bc);
+      drupal_set_title($term->name);
+    }
+  } 
+}
